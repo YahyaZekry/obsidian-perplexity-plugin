@@ -273,6 +273,7 @@ class PerplexityService {
         }
     }
 
+    // FIXED: Enhanced spell check with proper JSON parsing and validation
     async checkSpellingAndFormat(content: string, language: string = 'en', model: string = 'sonar'): Promise<SpellCheckResult> {
         const validatedModel = this.validateModel(model);
         const cacheKey = `spell_${validatedModel}_${language}_${this.hashContent(content)}`;
@@ -289,52 +290,153 @@ class PerplexityService {
         const messages = [
             {
                 role: 'system',
-                content: `You are an advanced markdown spell checker and formatter for ${languageInstructions.name} language. ${languageInstructions.instructions}
+                content: `You are an advanced markdown spell checker for ${languageInstructions.name} language. 
 
-Return only valid JSON with:
-1. "corrections" array with spelling mistakes 
-2. "formattingIssues" array with markdown formatting problems
+CRITICAL: Return ONLY valid JSON in this exact format with NO code blocks, NO thinking tags:
 
-Return only valid JSON, no other text.`
+{
+  "corrections": [
+    {
+      "original": "مشكلة",
+      "suggested": "مُشكلة", 
+      "line": 5,
+      "confidence": 0.95,
+      "context": "surrounding text"
+    }
+  ],
+  "formattingIssues": [
+    {
+      "issue": "Missing proper header formatting",
+      "line": 10,
+      "suggestion": "Add ## before section title",
+      "fixable": true,
+      "originalText": "Section Title",
+      "suggestedText": "## Section Title"
+    }
+  ]
+}
+
+Return ONLY this JSON structure, no explanations, no code blocks.`
             },
             {
                 role: 'user',
-                content: `Please check this markdown content in ${languageInstructions.name}: ${sanitizedContent}`
+                content: `Check this ${languageInstructions.name} markdown content and return only JSON: ${sanitizedContent}`
             }
         ];
 
         try {
             const response = await this.makeRequest(messages, validatedModel, 'SPELL_CHECK');
-            let result;
-            try {
-                const content = response.choices[0].message.content;
-                const jsonMatch = content.match(/\{[\s\S]*\}/);
-                const jsonString = jsonMatch ? jsonMatch[0] : content;
-                result = JSON.parse(jsonString);
+            const responseContent = response.choices[0].message.content;
 
-                if (result.formattingIssues) {
-                    result.formattingIssues = result.formattingIssues.map((issue: any) => ({
-                        ...issue,
-                        fixable: issue.fixable !== undefined ? issue.fixable : false,
-                        originalText: issue.originalText || '',
-                        suggestedText: issue.suggestedText || issue.suggestion || ''
-                    }));
+            // DEBUG: Show what AI actually returns
+            console.log('🔍 SPELL CHECK RAW RESPONSE:', responseContent);
+            console.log('🔍 Response length:', responseContent.length);
+            console.log('🔍 Response preview:', responseContent.substring(0, 300) + '...');
+
+            let result: SpellCheckResult;
+            try {
+                // ENHANCED SPELL CHECK JSON EXTRACTION
+                let jsonString = responseContent.trim();
+
+                console.log('🚀 SPELL CHECK JSON EXTRACTION starting...');
+
+                // Remove <think> tags
+                jsonString = jsonString.replace(/<think>[\s\S]*?<\/think>/g, '');
+                console.log('Step 1 - Removed think tags, length:', jsonString.length);
+
+                // Extract from code blocks if present
+                const codeBlockMatch = jsonString.match(/```(?:json)?[\s\S]*?({[\s\S]*?})[\s\S]*?```/);
+                if (codeBlockMatch && codeBlockMatch[1]) {
+                    jsonString = codeBlockMatch[1];
+                    console.log('Step 2 - Extracted from code block, length:', jsonString.length);
                 }
 
+                // Find JSON boundaries
+                const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonString = jsonMatch[0];
+                    console.log('Step 3 - Found JSON boundaries, length:', jsonString.length);
+                }
+
+                console.log('🎯 Final spell check JSON for parsing:', jsonString.substring(0, 200) + '...');
+
+                const parsedResult = JSON.parse(jsonString);
+                console.log('✅ Spell check JSON parsed successfully!');
+                console.log('Raw corrections:', parsedResult.corrections?.length || 0);
+                console.log('Raw formatting issues:', parsedResult.formattingIssues?.length || 0);
+
+                // CRITICAL: Validate and clean all data to prevent undefined values
+                result = {
+                    corrections: Array.isArray(parsedResult.corrections) ? 
+                        parsedResult.corrections
+                            .filter(c => c && c.original && c.suggested && (c.line !== undefined && c.line !== null))
+                            .map(c => ({
+                                original: String(c.original || 'Unknown'),
+                                suggested: String(c.suggested || 'Unknown'),
+                                line: parseInt(String(c.line)) || 1,
+                                confidence: parseFloat(String(c.confidence)) || 0.8,
+                                context: String(c.context || '')
+                            })) : [],
+                    formattingIssues: Array.isArray(parsedResult.formattingIssues) ?
+                        parsedResult.formattingIssues
+                            .filter(issue => issue && issue.issue && (issue.line !== undefined && issue.line !== null))
+                            .map(issue => ({
+                                issue: String(issue.issue || 'Unknown formatting issue'),
+                                line: parseInt(String(issue.line)) || 1,
+                                suggestion: String(issue.suggestion || 'No suggestion available'),
+                                fixable: Boolean(issue.fixable),
+                                originalText: String(issue.originalText || ''),
+                                suggestedText: String(issue.suggestedText || issue.suggestion || '')
+                            })) : []
+                };
+
+                console.log('📊 FINAL VALIDATED SPELL CHECK RESULTS:');
+                console.log('✅ Valid corrections:', result.corrections.length);
+                console.log('✅ Valid formatting issues:', result.formattingIssues.length);
+
+                // Debug individual results
+                result.corrections.forEach((c, i) => {
+                    console.log(`Correction ${i + 1}: "${c.original}" → "${c.suggested}" (line ${c.line}, confidence: ${c.confidence})`);
+                });
+
+                result.formattingIssues.forEach((issue, i) => {
+                    console.log(`Formatting issue ${i + 1}: "${issue.issue}" at line ${issue.line} (fixable: ${issue.fixable})`);
+                });
+
             } catch (parseError) {
-                console.error('❌ Spell check JSON parsing error:', parseError);
-                result = { corrections: [], formattingIssues: [] };
+                console.error('❌ Spell check JSON parsing failed:', parseError);
+                console.error('❌ Parse error message:', parseError.message);
+                console.error('❌ Raw response that failed:', responseContent);
+
+                // Create a helpful error result with no undefined values
+                result = { 
+                    corrections: [], 
+                    formattingIssues: [
+                        {
+                            issue: `Spell check response parsing failed: ${parseError.message}`,
+                            line: 1,
+                            suggestion: 'The AI response was not in valid JSON format. Check console for details.',
+                            fixable: false,
+                            originalText: 'AI Response Error',
+                            suggestedText: 'Try again or check API configuration'
+                        }
+                    ]
+                };
+
+                console.log('🔄 Created fallback error result with no undefined values');
             }
+
             this.setCache(cacheKey, result);
             return result;
         } catch (error) {
-            console.error('💥 Spell check error:', error);
+            console.error('💥 Spell check operation failed:', error);
             throw new Error(`Failed to check spelling and formatting: ${error.message}`);
         }
     }
 
+    // ULTIMATE JSON EXTRACTION for Enhanced Rewrite
     async createEnhancedRewrite(content: string, fileName: string, language: string = 'en', model: string = 'sonar-reasoning-pro', onProgress?: (progress: number, status: string) => void): Promise<EnhancedRewriteResult> {
-        console.log('🎯 ENHANCED REWRITE STARTING WITH ADVANCED JSON EXTRACTION');
+        console.log('🎯 ENHANCED REWRITE STARTING WITH ULTIMATE JSON EXTRACTION');
         console.log('Content length:', content.length);
         console.log('File name:', fileName);
         console.log('Language:', language);
@@ -361,7 +463,7 @@ Return only valid JSON, no other text.`
                 role: 'system',
                 content: `You are an expert markdown content enhancer for ${languageInstructions.name} language. 
 
-CRITICAL: Return ONLY valid JSON in this exact format, with NO other text, NO thinking tags, NO explanations, NO code blocks:
+ABSOLUTELY CRITICAL: Return ONLY valid JSON in this exact format, with NO other text, NO thinking tags, NO code blocks:
 
 {
   "success": true,
@@ -389,7 +491,7 @@ ${languageInstructions.instructions}
             },
             {
                 role: 'user',
-                content: `Enhance this markdown file "${fileName}" content in ${languageInstructions.name}. Return ONLY the JSON object with no code blocks or extra text:
+                content: `Enhance this markdown file "${fileName}" content in ${languageInstructions.name}. Return ONLY the JSON object:
 
 ${content}`
             }
@@ -404,10 +506,9 @@ ${content}`
             const response = await this.makeRequest(messages, validatedModel, 'ENHANCED_REWRITE');
 
             if (onProgress) {
-                onProgress(75, 'Processing AI response...');
+                onProgress(75, 'Processing AI response with ultimate JSON extraction...');
             }
 
-            // FIXED: Declare variables at proper scope to avoid scoping issues
             let result: EnhancedRewriteResult;
             const responseContent = response.choices[0].message.content;
 
@@ -415,147 +516,98 @@ ${content}`
                 console.log('✅ Enhanced rewrite response received');
                 console.log('Response content preview:', responseContent.substring(0, 200) + '...');
 
-                // ENHANCED FIX: Advanced JSON extraction that handles multiple wrapper formats
+                // ULTIMATE JSON EXTRACTION: Multi-stage process
                 let jsonString = responseContent.trim();
 
-                console.log('🔧 Starting advanced JSON extraction...');
-                console.log('Original response starts with:', jsonString.substring(0, 50));
+                console.log('🚀 ULTIMATE JSON EXTRACTION STARTING...');
 
-                // Step 1: Remove <think> tags and everything inside them
+                // Step 1: Remove <think> tags
                 jsonString = jsonString.replace(/<think>[\s\S]*?<\/think>/g, '');
-                console.log('After removing think tags, starts with:', jsonString.substring(0, 50));
+                console.log('Step 1 - Removed think tags, length:', jsonString.length);
 
-                // Step 2: Remove markdown code blocks (```json or ```)
-                jsonString = jsonString.replace(/```(?:json)?[\s\S]*?```/g, function(match) {
-                    // Extract content between the backticks
-                    const codeBlockContent = match.replace(/```(?:json)?\s*/g, '').replace(/```$/g, '');
-                    return codeBlockContent.trim();
-                });
-                console.log('After removing code blocks, starts with:', jsonString.substring(0, 50));
-
-                // Step 3: Find JSON object boundaries
-                const jsonMatch = jsonString.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    jsonString = jsonMatch[0];
-                    console.log('Extracted JSON match, starts with:', jsonString.substring(0, 50));
-                } else {
-                    console.log('⚠️  No JSON object found in standard format, trying alternative extraction...');
-
-                    // Try to find JSON between any brackets
-                    const bracketMatch = jsonString.match(/\{[^}]*"enhancedContent"[\s\S]*\}/);
-                    if (bracketMatch) {
-                        jsonString = bracketMatch[0];
-                        console.log('Found JSON with alternative extraction:', jsonString.substring(0, 100));
-                    }
+                // Step 2: Extract from markdown code blocks
+                const codeBlockMatch = jsonString.match(/```(?:json)?[\s\r\n]*([\s\S]*?)[\s\r\n]*```/);
+                if (codeBlockMatch && codeBlockMatch[1]) {
+                    jsonString = codeBlockMatch[1].trim();
+                    console.log('Step 2 - Extracted from code block, length:', jsonString.length);
                 }
 
-                // Step 4: Clean up common JSON formatting issues
-                jsonString = jsonString.trim();
+                // Step 3: Find JSON boundaries
+                const jsonMatch = jsonString.match(/\{[\s\S]*"enhancedContent"[\s\S]*\}/);
+                if (jsonMatch) {
+                    jsonString = jsonMatch[0];
+                    console.log('Step 3 - JSON boundaries found, length:', jsonString.length);
+                }
 
-                console.log('📋 Parsing enhanced rewrite JSON...');
-                console.log('Final cleaned JSON preview:', jsonString.substring(0, 300) + '...');
+                console.log('🎯 Final JSON for parsing:', jsonString.substring(0, 300) + '...');
 
                 const parsedResult = JSON.parse(jsonString);
-                console.log('✅ JSON parsed successfully!');
-                console.log('Parsed result success:', parsedResult.success);
+                console.log('✅ ULTIMATE JSON PARSING SUCCESSFUL!');
                 console.log('Enhanced content length:', parsedResult.enhancedContent?.length || 0);
-                console.log('Number of improvements:', parsedResult.improvements?.length || 0);
 
                 result = {
                     success: parsedResult.success !== false,
                     enhancedContent: parsedResult.enhancedContent || '',
                     improvements: parsedResult.improvements || ['Content enhancement applied'],
-                    summary: parsedResult.summary || 'Content has been enhanced with improved formatting and structure',
-                    error: parsedResult.success === false ? (parsedResult.error || 'Enhancement failed') : undefined
+                    summary: parsedResult.summary || 'Content enhanced',
+                    error: parsedResult.error
                 };
 
-                // CRITICAL FIX: Validate that we actually got enhanced content AND that it's not JSON
-                if (!result.enhancedContent || result.enhancedContent.length === 0) {
-                    console.error('❌ No enhanced content received');
-                    result = {
-                        success: false,
-                        enhancedContent: '',
-                        improvements: [],
-                        summary: 'No enhanced content was generated',
-                        error: 'The AI response did not contain enhanced content'
-                    };
-                } else if (result.enhancedContent.includes('"enhancedContent":') || result.enhancedContent.startsWith('{"') || result.enhancedContent.includes('```json')) {
-                    // CRITICAL FIX: Detect if the content is still JSON/markdown and extract it properly
-                    console.warn('⚠️  Enhanced content appears to contain JSON/markdown structure, attempting to extract...');
-
-                    let cleanContent = result.enhancedContent;
-
-                    // Try parsing as nested JSON first
+                // ULTIMATE VALIDATION: Check for JSON pollution in content
+                if (result.enhancedContent.includes('"enhancedContent":') || result.enhancedContent.startsWith('{"')) {
+                    console.warn('⚠️  Content contains JSON structure, extracting...');
                     try {
                         const innerParsed = JSON.parse(result.enhancedContent);
                         if (innerParsed.enhancedContent) {
-                            cleanContent = innerParsed.enhancedContent;
-                            console.log('✅ Successfully extracted content from nested JSON');
+                            result.enhancedContent = innerParsed.enhancedContent;
+                            console.log('✅ Extracted from nested JSON');
                         }
-                    } catch (innerError) {
-                        console.log('❌ Nested JSON parsing failed, trying manual cleanup...');
-
-                        // Manual cleanup for JSON structure
-                        cleanContent = cleanContent.replace(/^.*"enhancedContent":\s*"/, '');
-                        cleanContent = cleanContent.replace(/"\s*,\s*"improvements":[\s\S]*$/, '');
-                        cleanContent = cleanContent.replace(/```json[\s\S]*?```/g, '');
-                        cleanContent = cleanContent.replace(/```[\s\S]*?```/g, '');
-                        cleanContent = cleanContent.replace(/\\n/g, '\n');
-                        cleanContent = cleanContent.replace(/\\"/g, '"');
-                        cleanContent = cleanContent.replace(/^[\s\S]*?(?=# )/, ''); // Remove everything before first markdown header
-                        cleanContent = cleanContent.trim();
-
-                        console.log('✅ Applied manual cleanup to content');
+                    } catch {
+                        // Manual cleanup
+                        let clean = result.enhancedContent;
+                        clean = clean.replace(/^.*"enhancedContent":\s*"/, '');
+                        clean = clean.replace(/"\s*,\s*"improvements":[\s\S]*$/, '');
+                        clean = clean.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                        result.enhancedContent = clean;
+                        console.log('✅ Manual cleanup applied');
                     }
-
-                    result.enhancedContent = cleanContent;
                 }
 
-                console.log('🎉 Enhanced rewrite result processed successfully');
-                console.log('Final enhanced content length:', result.enhancedContent.length);
-                console.log('Enhanced content preview:', result.enhancedContent.substring(0, 200) + '...');
-                console.log('Content starts with hash?', result.enhancedContent.startsWith('#'));
-                console.log('Content contains JSON structure?', result.enhancedContent.includes('"enhancedContent":'));
+                console.log('🎉 ULTIMATE EXTRACTION COMPLETE!');
+                console.log('Final content length:', result.enhancedContent.length);
+                console.log('Is clean markdown?', result.enhancedContent.startsWith('#'));
 
             } catch (parseError) {
-                console.error('❌ Enhanced rewrite JSON parsing error:', parseError);
-                console.error('Raw response content sample:', responseContent.substring(0, 500) + '...');
+                console.error('❌ Enhanced rewrite parsing error:', parseError);
+                console.error('❌ Failed response:', responseContent.substring(0, 500) + '...');
 
-                // Enhanced fallback: try to extract markdown content directly
+                // Fallback extraction
                 let fallbackContent = responseContent;
-
-                // Remove think tags
                 fallbackContent = fallbackContent.replace(/<think>[\s\S]*?<\/think>/g, '');
 
-                // Try to extract content from code blocks
-                const codeBlockMatch = fallbackContent.match(/```(?:json)?[\s\S]*?{[\s\S]*?"enhancedContent":\s*"([\s\S]*?)"[\s\S]*?}[\s\S]*?```/);
-                if (codeBlockMatch && codeBlockMatch[1]) {
-                    console.log('🔄 Extracted content from code block in fallback');
-                    fallbackContent = codeBlockMatch[1];
-                    fallbackContent = fallbackContent.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+                const fallbackMatch = fallbackContent.match(/"enhancedContent":\s*"([\s\S]*?)"/);
+                if (fallbackMatch && fallbackMatch[1]) {
+                    fallbackContent = fallbackMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"');
                 } else if (fallbackContent.includes('#')) {
-                    // If we can find markdown headers, try to use that
-                    const markdownMatch = fallbackContent.match(/(^|\n)(# [\s\S]*)/);
-                    if (markdownMatch && markdownMatch[2]) {
-                        fallbackContent = markdownMatch[2];
-                        console.log('🔄 Extracted markdown content in fallback');
-                    }
+                    const mdMatch = fallbackContent.match(/(# [\s\S]*)/);
+                    if (mdMatch) fallbackContent = mdMatch[1];
                 }
 
                 result = {
                     success: true,
                     enhancedContent: fallbackContent.trim(),
-                    improvements: ['Content formatting improved', 'Structure enhanced'],
-                    summary: 'Content has been enhanced (fallback extraction method used)',
+                    improvements: ['Content enhanced (fallback method)'],
+                    summary: 'Enhanced using fallback extraction',
                     error: undefined
                 };
+
+                console.log('🔄 Fallback extraction complete, length:', result.enhancedContent.length);
             }
 
             if (onProgress) {
                 onProgress(100, result.success ? 'Enhancement completed!' : 'Enhancement failed');
             }
 
-            console.log('💾 Caching enhanced rewrite result...');
             this.setCache(cacheKey, result);
             return result;
         } catch (error) {
@@ -567,7 +619,7 @@ ${content}`
                 success: false,
                 enhancedContent: '',
                 improvements: [],
-                summary: 'Failed to create enhanced version',
+                summary: 'Failed to enhance',
                 error: `API call failed: ${error.message}`
             };
         }
@@ -577,7 +629,7 @@ ${content}`
         const instructions = {
             'ar': {
                 name: 'Arabic',
-                instructions: 'Handle Arabic text with RTL direction. Check for proper Arabic grammar, spelling, and diacritics.'
+                instructions: 'Handle Arabic text with RTL direction. Check for proper Arabic grammar, spelling, and diacritics. Preserve Islamic terminology and Quranic verses.'
             },
             'en': {
                 name: 'English', 
@@ -663,208 +715,13 @@ class VaultAnalyzer {
         };
 
         analysis.insights.push(`Found ${analysis.markdownFiles} markdown files out of ${analysis.totalFiles} total files`);
-        analysis.insights.push(`Analyzed ${analysis.analyzedFiles} files for content themes`);
 
         return analysis;
     }
 
     async generateSmartLinks(file: TFile, language: string = 'en', excludedExtensions: string[] = [], mode: 'current' | 'all' = 'current', maxSuggestions: number = 10, model: string = 'sonar-pro'): Promise<LinkSuggestion[]> {
-        const suggestions: LinkSuggestion[] = [];
-        // Simplified implementation for compilation
-        return suggestions;
-    }
-}
-
-class SpellCheckModal extends Modal {
-    private statusContainer: HTMLElement;
-
-    constructor(
-        app: App, 
-        private file: TFile, 
-        private result: SpellCheckResult, 
-        private plugin: PerplexityPlugin
-    ) {
-        super(app);
-        this.setTitle(`Spell Check Results - ${this.file.basename}`);
-    }
-
-    onOpen() {
-        const { contentEl } = this;
-
-        console.log('📖 SpellCheckModal opened for file:', this.file.basename);
-
-        this.statusContainer = contentEl.createDiv({ cls: 'status-container' });
-
-        const actionsHeader = contentEl.createDiv({ cls: 'spell-check-actions-header' });
-
-        const createEnhancedBtn = actionsHeader.createEl('button', { 
-            text: '🚀 Create Enhanced Version with Advanced JSON Fix', 
-            cls: 'enhanced-rewrite-btn'
-        });
-
-        createEnhancedBtn.onclick = () => {
-            console.log('🎯 Enhanced Version button clicked!');
-            console.log('File:', this.file.basename);
-            this.createEnhancedVersionWithDebugging();
-        };
-
-        if (this.result.corrections?.length > 0) {
-            contentEl.createEl('h3', { text: `📝 Spelling Corrections (${this.result.corrections.length})` });
-
-            this.result.corrections.forEach((correction, index) => {
-                const correctionDiv = contentEl.createDiv({ cls: 'spell-check-item enhanced' });
-
-                if (this.plugin.settings.rtlSupport && this.plugin.settings.spellCheckLanguage === 'ar') {
-                    correctionDiv.addClass('rtl-content');
-                }
-
-                const headerDiv = correctionDiv.createDiv({ cls: 'correction-header' });
-                headerDiv.createEl('span', { 
-                    text: `Correction ${index + 1}`,
-                    cls: 'correction-number'
-                });
-                headerDiv.createEl('span', { 
-                    text: `${Math.round(correction.confidence * 100)}% confidence`,
-                    cls: 'confidence-badge'
-                });
-
-                const contentDiv = correctionDiv.createDiv({ cls: 'correction-content' });
-                const originalSpan = contentDiv.createSpan({ cls: 'spell-check-original' });
-                originalSpan.textContent = correction.original;
-
-                contentDiv.createSpan({ text: ' → ', cls: 'correction-arrow' });
-
-                const suggestedSpan = contentDiv.createSpan({ cls: 'spell-check-suggested' });
-                suggestedSpan.textContent = correction.suggested;
-
-                if (correction.context) {
-                    const contextDiv = correctionDiv.createDiv({ cls: 'correction-context' });
-                    contextDiv.createEl('strong', { text: 'Context: ' });
-                    contextDiv.createSpan({ text: correction.context });
-                }
-
-                correctionDiv.createDiv({ 
-                    text: `Line ${correction.line}`,
-                    cls: 'spell-check-meta'
-                });
-            });
-        }
-
-        if (this.result.formattingIssues?.length > 0) {
-            contentEl.createEl('h3', { text: `🔧 Formatting Issues (${this.result.formattingIssues.length})` });
-
-            this.result.formattingIssues.forEach((issue, index) => {
-                const issueDiv = contentEl.createDiv({ cls: 'formatting-issue-item enhanced' });
-
-                issueDiv.createDiv({ 
-                    text: `Line ${issue.line}: ${issue.issue}`,
-                    cls: 'issue-description'
-                });
-
-                issueDiv.createDiv({ 
-                    text: issue.suggestion,
-                    cls: 'formatting-suggestion'
-                });
-            });
-        }
-
-        if ((!this.result.corrections || this.result.corrections.length === 0) && 
-            (!this.result.formattingIssues || this.result.formattingIssues.length === 0)) {
-            const perfectDiv = contentEl.createDiv({ cls: 'perfect-result' });
-            perfectDiv.createEl('p', { text: '✅ No issues found! Your document looks great.' });
-
-            const enhanceAnywayDiv = perfectDiv.createDiv({ cls: 'enhance-anyway' });
-            enhanceAnywayDiv.createEl('p', { text: 'Want to make it even better with advanced JSON extraction?' });
-            const enhanceBtn = enhanceAnywayDiv.createEl('button', { 
-                text: '🚀 Create Enhanced Version with Advanced Fix',
-                cls: 'enhanced-rewrite-btn'
-            });
-            enhanceBtn.onclick = () => {
-                console.log('🎯 Enhanced Version (anyway) button clicked!');
-                this.createEnhancedVersionWithDebugging();
-            };
-        }
-    }
-
-    private async createEnhancedVersionWithDebugging() {
-        console.log('🚀 createEnhancedVersionWithDebugging() called WITH ADVANCED JSON EXTRACTION');
-        console.log('📄 File:', this.file.basename, 'Path:', this.file.path);
-        console.log('🌐 Language:', this.plugin.settings.spellCheckLanguage);
-        console.log('🤖 Enhanced rewrite model:', this.plugin.settings.enhancedRewriteModel);
-        console.log('🔑 API key configured:', !!this.plugin.settings.apiKey);
-
-        this.statusContainer.empty();
-
-        const progressIndicator = UIUtils.showProgressIndicator(this.statusContainer, 
-            'Preparing content for enhancement with advanced JSON extraction...');
-
-        try {
-            console.log('📖 Reading file content...');
-            const content = await this.app.vault.read(this.file);
-            console.log('📄 Content length:', content.length);
-            console.log('📝 Content preview:', content.substring(0, 200) + '...');
-
-            console.log('🔧 Calling enhanced rewrite service with advanced JSON extraction...');
-            const result = await this.plugin.perplexityService.createEnhancedRewrite(
-                content,
-                this.file.basename,
-                this.plugin.settings.spellCheckLanguage,
-                this.plugin.settings.enhancedRewriteModel,
-                (progress, status) => {
-                    console.log(`📊 Progress: ${progress}% - ${status}`);
-                    progressIndicator.update(progress, status);
-                }
-            );
-
-            progressIndicator.remove();
-
-            console.log('📋 Enhanced rewrite result with advanced extraction:', {
-                success: result.success,
-                contentLength: result.enhancedContent?.length || 0,
-                improvementsCount: result.improvements?.length || 0,
-                summary: result.summary,
-                error: result.error
-            });
-
-            if (result.success && result.enhancedContent) {
-                const baseName = this.file.basename;
-                const enhancedName = `${baseName}-enhanced-ultimate.md`;
-                const enhancedPath = this.file.path.replace(`${baseName}.md`, enhancedName);
-
-                console.log('💾 Creating enhanced file with advanced extraction:', enhancedPath);
-                console.log('💾 Enhanced content to save (preview):', result.enhancedContent.substring(0, 300) + '...');
-                console.log('💾 Content is clean markdown?', result.enhancedContent.startsWith('#') && !result.enhancedContent.includes('"enhancedContent":'));
-
-                await this.app.vault.create(enhancedPath, result.enhancedContent);
-
-                UIUtils.showStatusMessage(this.statusContainer, 'success', 
-                    `Successfully created ${enhancedName} with clean markdown content using advanced JSON extraction!`);
-
-                setTimeout(async () => {
-                    await this.app.workspace.openLinkText(this.file.path, '', false);
-                    await this.app.workspace.openLinkText(enhancedPath, '', 'split');
-                    this.close();
-                }, 1000);
-
-            } else {
-                console.error('❌ Enhanced rewrite failed:', result.error);
-                UIUtils.showErrorWithRetry(this.statusContainer, 
-                    result.error || 'Unknown error occurred during enhancement', 
-                    () => this.createEnhancedVersionWithDebugging());
-            }
-        } catch (error) {
-            console.error('💥 Enhanced version creation error:', error);
-            console.error('Stack trace:', error.stack);
-            progressIndicator.remove();
-            UIUtils.showErrorWithRetry(this.statusContainer, 
-                `Enhancement failed: ${error.message}`, 
-                () => this.createEnhancedVersionWithDebugging());
-        }
-    }
-
-    onClose() {
-        const { contentEl } = this;
-        contentEl.empty();
+        // Simplified implementation
+        return [];
     }
 }
 
@@ -878,13 +735,13 @@ class AISpellCheckModal extends Modal {
     onOpen() {
         const { contentEl } = this;
 
-        contentEl.createEl('h2', { text: 'AI Spell Check & Format with Advanced JSON Extraction' });
+        contentEl.createEl('h2', { text: 'AI Spell Check & Format' });
 
         this.statusContainer = contentEl.createDiv({ cls: 'status-container' });
 
         new Setting(contentEl)
             .setName('Check Current File')
-            .setDesc('Check spelling and formatting with advanced JSON extraction fix')
+            .setDesc('Check spelling and formatting of the currently open file')
             .addButton(btn => btn
                 .setButtonText('Check Current File')
                 .setCta()
@@ -905,7 +762,7 @@ class AISpellCheckModal extends Modal {
 
         new Setting(contentEl)
             .setName('Check All Vault Files')
-            .setDesc('Check spelling and formatting of all markdown files in your vault')
+            .setDesc('Check spelling and formatting of all markdown files')
             .addButton(btn => btn
                 .setButtonText('Check Entire Vault')
                 .onClick(async () => {
@@ -921,6 +778,240 @@ class AISpellCheckModal extends Modal {
                         UIUtils.showStatusMessage(this.statusContainer, 'error', 
                             `Failed to check vault: ${error.message}`);
                     }
+                }));
+
+        new Setting(contentEl)
+            .setName('AI Model Settings')
+            .setDesc(`Currently using: ${this.plugin.settings.spellCheckModel}`)
+            .addButton(btn => btn
+                .setButtonText('Change Model')
+                .onClick(() => {
+                    this.close();
+                    this.plugin.openSettings();
+                }));
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+class SpellCheckModal extends Modal {
+    private statusContainer: HTMLElement;
+
+    constructor(
+        app: App, 
+        private file: TFile, 
+        private result: SpellCheckResult, 
+        private plugin: PerplexityPlugin
+    ) {
+        super(app);
+        this.setTitle(`Spell Check Results - ${this.file.basename}`);
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+
+        console.log('📖 SpellCheckModal opened for file:', this.file.basename);
+        console.log('📊 Results: corrections =', this.result.corrections?.length || 0, ', formatting issues =', this.result.formattingIssues?.length || 0);
+
+        this.statusContainer = contentEl.createDiv({ cls: 'status-container' });
+
+        const actionsHeader = contentEl.createDiv({ cls: 'spell-check-actions-header' });
+
+        const createEnhancedBtn = actionsHeader.createEl('button', { 
+            text: '🚀 Create Enhanced Version', 
+            cls: 'enhanced-rewrite-btn'
+        });
+
+        createEnhancedBtn.onclick = () => {
+            console.log('🎯 Enhanced Version button clicked!');
+            this.createEnhancedVersionWithDebugging();
+        };
+
+        if (this.result.corrections?.length > 0) {
+            contentEl.createEl('h3', { text: `📝 Spelling Corrections (${this.result.corrections.length})` });
+
+            this.result.corrections.forEach((correction, index) => {
+                const correctionDiv = contentEl.createDiv({ cls: 'spell-check-item enhanced' });
+
+                if (this.plugin.settings.rtlSupport && this.plugin.settings.spellCheckLanguage === 'ar') {
+                    correctionDiv.addClass('rtl-content');
+                }
+
+                correctionDiv.createEl('h4', { text: `Correction ${index + 1}` });
+                correctionDiv.createEl('p', { text: `${correction.original} → ${correction.suggested}` });
+                correctionDiv.createEl('p', { text: `Line ${correction.line} (${Math.round(correction.confidence * 100)}% confidence)` });
+                if (correction.context) {
+                    correctionDiv.createEl('p', { text: `Context: ${correction.context}` });
+                }
+            });
+        }
+
+        if (this.result.formattingIssues?.length > 0) {
+            contentEl.createEl('h3', { text: `🔧 Formatting Issues (${this.result.formattingIssues.length})` });
+
+            this.result.formattingIssues.forEach((issue, index) => {
+                const issueDiv = contentEl.createDiv({ cls: 'formatting-issue-item enhanced' });
+
+                console.log(`🔍 Formatting Issue ${index + 1}:`, {
+                    issue: issue.issue,
+                    line: issue.line,
+                    suggestion: issue.suggestion,
+                    fixable: issue.fixable
+                });
+
+                issueDiv.createEl('h4', { text: `Issue ${index + 1}` });
+                issueDiv.createEl('p', { text: `Line ${issue.line}: ${issue.issue}` });
+                issueDiv.createEl('p', { text: `Suggestion: ${issue.suggestion}` });
+
+                if (issue.fixable) {
+                    const fixableBadge = issueDiv.createEl('span', { 
+                        text: 'Auto-Fixable',
+                        cls: 'fixable-badge'
+                    });
+                    fixableBadge.style.background = 'var(--background-modifier-success)';
+                    fixableBadge.style.padding = '2px 8px';
+                    fixableBadge.style.borderRadius = '4px';
+                }
+            });
+        }
+
+        if ((!this.result.corrections || this.result.corrections.length === 0) && 
+            (!this.result.formattingIssues || this.result.formattingIssues.length === 0)) {
+            const perfectDiv = contentEl.createDiv({ cls: 'perfect-result' });
+            perfectDiv.createEl('p', { text: '✅ No issues found! Your document looks great.' });
+
+            const enhanceBtn = perfectDiv.createEl('button', { 
+                text: '🚀 Create Enhanced Version Anyway',
+                cls: 'enhanced-rewrite-btn'
+            });
+            enhanceBtn.onclick = () => this.createEnhancedVersionWithDebugging();
+        }
+    }
+
+    private async createEnhancedVersionWithDebugging() {
+        console.log('🚀 Creating enhanced version with ultimate JSON extraction...');
+
+        this.statusContainer.empty();
+        const progressIndicator = UIUtils.showProgressIndicator(this.statusContainer, 'Preparing enhancement...');
+
+        try {
+            const content = await this.app.vault.read(this.file);
+
+            const result = await this.plugin.perplexityService.createEnhancedRewrite(
+                content,
+                this.file.basename,
+                this.plugin.settings.spellCheckLanguage,
+                this.plugin.settings.enhancedRewriteModel,
+                (progress, status) => {
+                    progressIndicator.update(progress, status);
+                }
+            );
+
+            progressIndicator.remove();
+
+            if (result.success && result.enhancedContent) {
+                const enhancedName = `${this.file.basename}-enhanced.md`;
+                const enhancedPath = this.file.path.replace(`${this.file.basename}.md`, enhancedName);
+
+                await this.app.vault.create(enhancedPath, result.enhancedContent);
+
+                UIUtils.showStatusMessage(this.statusContainer, 'success', 
+                    `Successfully created ${enhancedName}!`);
+
+                setTimeout(async () => {
+                    await this.app.workspace.openLinkText(this.file.path, '', false);
+                    await this.app.workspace.openLinkText(enhancedPath, '', 'split');
+                    this.close();
+                }, 1000);
+
+            } else {
+                UIUtils.showErrorWithRetry(this.statusContainer, 
+                    result.error || 'Enhancement failed', 
+                    () => this.createEnhancedVersionWithDebugging());
+            }
+        } catch (error) {
+            progressIndicator.remove();
+            UIUtils.showErrorWithRetry(this.statusContainer, 
+                `Enhancement failed: ${error.message}`, 
+                () => this.createEnhancedVersionWithDebugging());
+        }
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+class PerplexityMainModal extends Modal {
+    private statusContainer: HTMLElement;
+
+    constructor(app: App, private plugin: PerplexityPlugin) {
+        super(app);
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+
+        contentEl.createEl('h2', { text: 'Perplexity Vault Assistant' });
+
+        this.statusContainer = contentEl.createDiv({ cls: 'status-container' });
+
+        new Setting(contentEl)
+            .setName('AI Spell Check & Format')
+            .setDesc('AI-powered spell checking with ultimate JSON extraction fix')
+            .addButton(btn => btn
+                .setButtonText('Open Spell Check')
+                .setCta()
+                .onClick(() => {
+                    this.close();
+                    new AISpellCheckModal(this.app, this.plugin).open();
+                }));
+
+        new Setting(contentEl)
+            .setName('Analyze Vault')
+            .setDesc('Analyze markdown files in your vault for themes')
+            .addButton(btn => btn
+                .setButtonText('Start Analysis')
+                .onClick(async () => {
+                    UIUtils.showLoadingButton(btn.buttonEl, 'Analyzing...');
+                    try {
+                        this.close();
+                        await this.plugin.analyzeVault();
+                    } catch (error) {
+                        UIUtils.hideLoadingButton(btn.buttonEl);
+                        UIUtils.showStatusMessage(this.statusContainer, 'error', 
+                            `Analysis failed: ${error.message}`);
+                    }
+                }));
+
+        new Setting(contentEl)
+            .setName('Generate Smart Links')
+            .setDesc('Generate intelligent links for the current file')
+            .addButton(btn => btn
+                .setButtonText('Generate Links')
+                .onClick(async () => {
+                    UIUtils.showLoadingButton(btn.buttonEl, 'Generating...');
+                    try {
+                        this.close();
+                        await this.plugin.generateSmartLinks();
+                    } catch (error) {
+                        UIUtils.hideLoadingButton(btn.buttonEl);
+                        UIUtils.showStatusMessage(this.statusContainer, 'error', 
+                            `Link generation failed: ${error.message}`);
+                    }
+                }));
+
+        new Setting(contentEl)
+            .setName('💖 Support Developer')
+            .setDesc('Support continued development')
+            .addButton(btn => btn
+                .setButtonText('☕ Buy me a coffee')
+                .onClick(() => {
+                    window.open('https://buymeacoffee.com/YahyaZekry', '_blank');
                 }));
     }
 
@@ -944,23 +1035,11 @@ class PerplexitySettingTab extends PluginSettingTab {
 
         containerEl.createEl('h2', { text: 'Perplexity Vault Assistant Settings' });
 
-        if (this.plugin.modelsMigrated) {
-            const migrationNotice = containerEl.createDiv({ cls: 'perplexity-migration-notice' });
-            migrationNotice.style.background = 'var(--background-modifier-success)';
-            migrationNotice.style.padding = '10px';
-            migrationNotice.style.borderRadius = '6px';
-            migrationNotice.style.marginBottom = '20px';
-            migrationNotice.style.direction = 'ltr';
-            migrationNotice.style.textAlign = 'left';
-            migrationNotice.createEl('strong', { text: '✅ Advanced JSON Extraction Fix Applied: ' });
-            migrationNotice.createSpan({ text: 'Your plugin now includes advanced JSON extraction that handles <think> tags, markdown code blocks, and nested JSON structures for clean content output.' });
-        }
-
         containerEl.createEl('h3', { text: '🔑 API Configuration' });
 
         new Setting(containerEl)
             .setName('Perplexity API Key')
-            .setDesc('Enter your Perplexity API key from perplexity.ai')
+            .setDesc('Enter your Perplexity API key')
             .addText(text => text
                 .setPlaceholder('Enter your API key')
                 .setValue(this.plugin.settings.apiKey)
@@ -968,36 +1047,6 @@ class PerplexitySettingTab extends PluginSettingTab {
                     this.plugin.settings.apiKey = value;
                     await this.plugin.saveSettings();
                 }));
-
-        containerEl.createEl('h3', { text: '🤖 AI Models Configuration (With Advanced JSON Extraction)' });
-
-        new Setting(containerEl)
-            .setName('Enhanced Rewrite Model')
-            .setDesc('AI model for creating enhanced versions with advanced JSON extraction fix')
-            .addDropdown(dropdown => {
-                PERPLEXITY_MODELS.reasoning.forEach(model => {
-                    dropdown.addOption(model.id, `${model.name} (Reasoning) - ${model.description}`);
-                });
-                PERPLEXITY_MODELS.research.forEach(model => {
-                    dropdown.addOption(model.id, `${model.name} (Research) - ${model.description}`);
-                });
-
-                dropdown.setValue(this.plugin.settings.enhancedRewriteModel)
-                    .onChange(async (value) => {
-                        this.plugin.settings.enhancedRewriteModel = value;
-                        await this.plugin.saveSettings();
-                    });
-            });
-
-        const modelInfo = containerEl.createDiv({ cls: 'model-info' });
-        modelInfo.style.direction = 'ltr';
-        modelInfo.style.textAlign = 'left';
-        modelInfo.createEl('p', { text: '🎯 ADVANCED JSON EXTRACTION FIX FEATURES:' });
-        modelInfo.createEl('p', { text: '✅ Handles <think> tags removal with advanced parsing' });
-        modelInfo.createEl('p', { text: '✅ Extracts content from markdown code blocks (```json)' });
-        modelInfo.createEl('p', { text: '✅ Multiple fallback extraction methods for robust parsing' });
-        modelInfo.createEl('p', { text: '✅ Clean markdown output guaranteed for Arabic documents' });
-        modelInfo.createEl('p', { text: '✅ Enhanced console logging for debugging' });
 
         containerEl.createEl('h3', { text: '🌐 Language Settings' });
 
@@ -1022,30 +1071,13 @@ class PerplexitySettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('RTL Content Support')
-            .setDesc('Enable right-to-left text direction for Arabic content areas')
+            .setDesc('Enable right-to-left text direction for Arabic content')
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.rtlSupport)
                 .onChange(async (value) => {
                     this.plugin.settings.rtlSupport = value;
                     await this.plugin.saveSettings();
                 }));
-
-        const supportContainer = containerEl.createDiv({ cls: 'perplexity-support-section' });
-        supportContainer.style.direction = 'ltr';
-        supportContainer.style.textAlign = 'left';
-        supportContainer.createEl('h3', { text: '💖 Support the Developer' });
-        supportContainer.createEl('p', { text: 'If you find this advanced JSON extraction fix helpful for your Arabic documents, consider supporting development:' });
-
-        const supportLink = supportContainer.createEl('a', { 
-            text: '☕ Buy me a coffee', 
-            href: 'https://buymeacoffee.com/YahyaZekry'
-        });
-        supportLink.style.color = 'var(--text-accent)';
-        supportLink.style.textDecoration = 'none';
-        supportLink.style.fontWeight = 'bold';
-        supportLink.style.display = 'block';
-        supportLink.style.marginTop = '10px';
-        supportLink.style.direction = 'ltr';
     }
 }
 
@@ -1056,151 +1088,116 @@ export default class PerplexityPlugin extends Plugin {
     modelsMigrated: boolean = false;
 
     async onload() {
-        console.log('🚀 Perplexity Plugin with ADVANCED JSON EXTRACTION FIX loading...');
+        console.log('🚀 Perplexity Plugin with ULTIMATE fixes loading...');
         await this.loadSettings();
 
         this.perplexityService = new PerplexityService(this.settings.apiKey);
         this.vaultAnalyzer = new VaultAnalyzer(this.app, this.perplexityService);
 
-        this.addRibbonIcon('brain', 'Perplexity Assistant with Advanced JSON Fix', (evt: MouseEvent) => {
-            console.log('🧠 Ribbon icon clicked');
-            this.checkCurrentFile();
+        // RESTORED: Full menu on ribbon icon click
+        this.addRibbonIcon('brain', 'Perplexity Assistant', (evt: MouseEvent) => {
+            console.log('🧠 Ribbon icon clicked - opening FULL MENU');
+            new PerplexityMainModal(this.app, this).open();
         });
 
         this.addCommand({
             id: 'check-current-file',
-            name: 'Check current file spelling and format with advanced JSON extraction',
-            callback: () => {
-                console.log('📄 Check current file command triggered');
-                this.checkCurrentFile();
-            }
+            name: 'Check current file with ultimate JSON extraction',
+            callback: () => this.checkCurrentFile()
         });
 
         this.addCommand({
             id: 'create-enhanced-version',
-            name: 'Create enhanced version with advanced JSON extraction fix',
-            callback: () => {
-                console.log('🎯 Create enhanced version command triggered');
-                this.createEnhancedVersionWithDebugging();
-            }
+            name: 'Create enhanced version with ultimate JSON extraction',
+            callback: () => this.createEnhancedVersionWithDebugging()
         });
 
         this.addSettingTab(new PerplexitySettingTab(this.app, this));
 
-        console.log('✅ Perplexity Plugin with ADVANCED JSON EXTRACTION FIX loaded successfully');
+        console.log('✅ Plugin loaded with full menu and ultimate JSON extraction');
     }
 
     onunload() {
-        console.log('🔄 Perplexity Plugin unloading...');
+        console.log('🔄 Plugin unloading...');
     }
 
     async loadSettings() {
-        console.log('⚙️ Loading plugin settings...');
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 
-        let needsSave = false;
-
         if (!this.settings.enhancedRewriteModel) {
-            console.log('➕ Adding enhanced rewrite model setting');
             this.settings.enhancedRewriteModel = 'sonar-reasoning-pro';
-            needsSave = true;
             this.modelsMigrated = true;
-        }
-
-        if (needsSave) {
             await this.saveSettings();
-            new Notice('🔧 Plugin updated: Advanced JSON extraction fix applied for clean markdown output!');
         }
-
-        console.log('✅ Settings loaded:', {
-            apiKeyConfigured: !!this.settings.apiKey,
-            language: this.settings.spellCheckLanguage,
-            enhancedRewriteModel: this.settings.enhancedRewriteModel
-        });
     }
 
     async saveSettings() {
-        console.log('💾 Saving plugin settings...');
         await this.saveData(this.settings);
         this.perplexityService.updateApiKey(this.settings.apiKey);
-        console.log('✅ Settings saved successfully');
     }
 
     openSettings() {
-        console.log('⚙️ Opening plugin settings...');
         (this.app as any).setting.open();
         (this.app as any).setting.openTabById('obsidian-perplexity-plugin');
     }
 
     async checkCurrentFile() {
-        console.log('📄 Starting current file spell check with advanced JSON extraction...');
+        console.log('📄 Starting spell check with ultimate JSON extraction...');
         if (!this.settings.apiKey) {
-            console.error('❌ API key not configured');
-            new Notice('Please configure your Perplexity API key in settings first');
+            new Notice('Please configure your Perplexity API key first');
             return;
         }
 
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') {
-            console.error('❌ No markdown file active');
             new Notice('Please open a markdown file first');
             return;
         }
 
-        console.log('📖 Active file:', activeFile.basename, 'Path:', activeFile.path);
-
-        const loadingNotice = new Notice('⏳ Checking spelling and formatting with advanced JSON extraction...', 0);
+        const loadingNotice = new Notice('⏳ Checking with enhanced parsing...', 0);
 
         try {
             const content = await this.app.vault.read(activeFile);
             console.log('📄 File content length:', content.length);
-            console.log('🤖 Using spell check model:', this.settings.spellCheckModel);
 
-            loadingNotice.setMessage('🔍 Analyzing content with AI...');
+            loadingNotice.setMessage('🔍 Analyzing with AI...');
 
             const result = await this.perplexityService.checkSpellingAndFormat(
                 content, 
                 this.settings.spellCheckLanguage,
-                this.settings.spellCheckModel
+                this.settings.spellCheckModel || 'sonar'
             );
 
             loadingNotice.hide();
-            new Notice('✅ Spell check completed!');
+            new Notice('✅ Analysis completed!');
 
-            console.log('✅ Spell check completed, opening modal...');
+            console.log('✅ Opening results modal...');
             new SpellCheckModal(this.app, activeFile, result, this).open();
         } catch (error) {
             console.error('💥 Spell check failed:', error);
             loadingNotice.hide();
-            new Notice(`❌ Spell check failed: ${error.message}`);
+            new Notice(`❌ Check failed: ${error.message}`);
         }
     }
 
     async checkVaultFiles() {
-        console.log('📚 Starting vault spell check with advanced JSON extraction...');
         if (!this.settings.apiKey) {
-            console.error('❌ API key not configured');
-            new Notice('Please configure your Perplexity API key in settings first');
+            new Notice('Please configure your API key first');
             return;
         }
 
         const markdownFiles = this.app.vault.getFiles()
-            .filter(file => file.extension === 'md' && !this.settings.excludedExtensions.includes(file.extension))
+            .filter(file => file.extension === 'md')
             .slice(0, 20);
 
         if (markdownFiles.length === 0) {
-            console.error('❌ No markdown files found');
-            new Notice('No markdown files found to check');
+            new Notice('No markdown files found');
             return;
         }
 
-        console.log(`📝 Found ${markdownFiles.length} markdown files to check`);
-
-        const loadingNotice = new Notice(`⏳ Starting vault spell check for ${markdownFiles.length} files...`, 0);
+        const loadingNotice = new Notice(`⏳ Checking ${markdownFiles.length} files...`, 0);
 
         try {
-            loadingNotice.setMessage('🔍 Processing files with AI...');
-
             const results = await this.vaultAnalyzer.checkMultipleFiles(
                 markdownFiles,
                 this.settings.spellCheckLanguage,
@@ -1208,58 +1205,46 @@ export default class PerplexityPlugin extends Plugin {
             );
 
             loadingNotice.hide();
-            new Notice('✅ Vault spell check completed!');
-
             const totalIssues = results.reduce((sum, r) => 
                 sum + r.result.corrections.length + r.result.formattingIssues.length, 0);
-            new Notice(`📊 Found ${totalIssues} total issues across ${results.length} files.`);
+            new Notice(`✅ Found ${totalIssues} issues across ${results.length} files`);
 
         } catch (error) {
-            console.error('💥 Vault spell check failed:', error);
             loadingNotice.hide();
-            new Notice(`❌ Vault spell check failed: ${error.message}`);
+            new Notice(`❌ Vault check failed: ${error.message}`);
         }
     }
 
     async analyzeVault() {
-        console.log('📊 Starting vault analysis...');
         if (!this.settings.apiKey) {
-            console.error('❌ API key not configured');
-            new Notice('Please configure your Perplexity API key in settings first');
+            new Notice('Please configure your API key first');
             return;
         }
 
-        new Notice('🚀 Starting vault analysis (MD files only)...');
+        new Notice('🚀 Starting vault analysis...');
         try {
             const analysis = await this.vaultAnalyzer.analyzeVault(this.settings.excludedExtensions);
-            console.log('✅ Vault analysis completed:', analysis);
-            new Notice(`📊 Analysis complete: ${analysis.markdownFiles} MD files analyzed`);
+            new Notice(`📊 Analysis complete: ${analysis.markdownFiles} MD files`);
         } catch (error) {
-            console.error('💥 Vault analysis failed:', error);
             new Notice(`Analysis failed: ${error.message}`);
         }
     }
 
     async generateSmartLinks() {
-        console.log('🔗 Starting smart links generation...');
         if (!this.settings.apiKey) {
-            console.error('❌ API key not configured');
-            new Notice('Please configure your Perplexity API key in settings first');
+            new Notice('Please configure your API key first');
             return;
         }
 
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') {
-            console.error('❌ No markdown file active');
             new Notice('Please open a markdown file first');
             return;
         }
 
-        const loadingNotice = new Notice(`⏳ Generating smart links...`, 0);
+        const loadingNotice = new Notice('⏳ Generating smart links...', 0);
 
         try {
-            loadingNotice.setMessage('🔍 Analyzing content relationships...');
-
             const suggestions = await this.vaultAnalyzer.generateSmartLinks(
                 activeFile,
                 this.settings.spellCheckLanguage,
@@ -1270,42 +1255,30 @@ export default class PerplexityPlugin extends Plugin {
             );
 
             loadingNotice.hide();
-            new Notice(`✅ Smart links generated: ${suggestions.length} suggestions found!`);
+            new Notice(`✅ Generated ${suggestions.length} link suggestions`);
 
         } catch (error) {
-            console.error('💥 Smart linking failed:', error);
             loadingNotice.hide();
-            new Notice(`❌ Smart linking failed: ${error.message}`);
+            new Notice(`❌ Link generation failed: ${error.message}`);
         }
     }
 
     async createEnhancedVersionWithDebugging() {
-        console.log('🎯 Starting enhanced version creation with ADVANCED JSON EXTRACTION FIX...');
-
         if (!this.settings.apiKey) {
-            console.error('❌ API key not configured');
-            new Notice('Please configure your Perplexity API key in settings first');
+            new Notice('Please configure your API key first');
             return;
         }
 
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile || activeFile.extension !== 'md') {
-            console.error('❌ No markdown file active');
             new Notice('Please open a markdown file first');
             return;
         }
 
-        console.log('📄 Processing file:', activeFile.basename);
-        console.log('🤖 Using enhanced rewrite model:', this.settings.enhancedRewriteModel);
-        console.log('🌐 Language:', this.settings.spellCheckLanguage);
-
-        const loadingNotice = new Notice(`🚀 Creating enhanced version of ${activeFile.basename} with ADVANCED JSON extraction fix...`, 0);
+        const loadingNotice = new Notice(`🚀 Creating enhanced ${activeFile.basename}...`, 0);
 
         try {
             const content = await this.app.vault.read(activeFile);
-            console.log('📖 Content loaded, length:', content.length);
-
-            loadingNotice.setMessage('🔍 Processing content with advanced AI and JSON extraction...');
 
             const result = await this.perplexityService.createEnhancedRewrite(
                 content,
@@ -1313,47 +1286,31 @@ export default class PerplexityPlugin extends Plugin {
                 this.settings.spellCheckLanguage,
                 this.settings.enhancedRewriteModel,
                 (progress, status) => {
-                    console.log(`📊 Progress: ${progress}% - ${status}`);
                     loadingNotice.setMessage(`⏳ ${status} (${progress}%)`);
                 }
             );
 
-            console.log('📋 Enhancement result with advanced JSON extraction:', {
-                success: result.success,
-                contentLength: result.enhancedContent?.length || 0,
-                improvementsCount: result.improvements?.length || 0,
-                error: result.error
-            });
-
             if (result.success) {
-                const enhancedName = `${activeFile.basename}-enhanced-ultimate.md`;
+                const enhancedName = `${activeFile.basename}-enhanced-final.md`;
                 const enhancedPath = activeFile.path.replace(`${activeFile.basename}.md`, enhancedName);
-
-                console.log('💾 Creating enhanced file with advanced extraction at:', enhancedPath);
-                console.log('💾 Enhanced content preview:', result.enhancedContent.substring(0, 200) + '...');
-                console.log('💾 Content is clean markdown?', result.enhancedContent.startsWith('#') && !result.enhancedContent.includes('"enhancedContent":'));
 
                 await this.app.vault.create(enhancedPath, result.enhancedContent);
 
                 loadingNotice.hide();
-                new Notice(`✅ Created ${enhancedName} with CLEAN MARKDOWN CONTENT using advanced JSON extraction!`);
+                new Notice(`✅ Created ${enhancedName}!`);
 
                 setTimeout(async () => {
-                    console.log('📖 Opening files side by side...');
                     await this.app.workspace.openLinkText(activeFile.path, '', false);
                     await this.app.workspace.openLinkText(enhancedPath, '', 'split');
                 }, 500);
 
             } else {
-                console.error('❌ Enhancement failed:', result.error);
                 loadingNotice.hide();
-                new Notice(`❌ Failed to create enhanced version: ${result.error}`);
+                new Notice(`❌ Enhancement failed: ${result.error}`);
             }
         } catch (error) {
-            console.error('💥 Enhanced version creation error:', error);
-            console.error('Stack:', error.stack);
             loadingNotice.hide();
-            new Notice(`❌ Error creating enhanced version: ${error.message}`);
+            new Notice(`❌ Enhancement error: ${error.message}`);
         }
     }
 }
