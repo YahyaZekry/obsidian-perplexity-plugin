@@ -1,0 +1,13 @@
+{
+  "id": "obsidian-perplexity-plugin",
+  "name": "Perplexity Vault Assistant",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "AI-powered vault management with spell checking, formatting, and smart linking using Perplexity API. Supports Arabic and multiple languages.",
+  "author": "Yahya Zekry",
+  "authorUrl": "https://github.com/yahyaZekry",
+  "fundingUrl": {
+    "Buy Me a Coffee": "https://buymeacoffee.com/YahyaZekry"
+  },
+  "isDesktopOnly": false
+}

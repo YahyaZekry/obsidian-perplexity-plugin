@@ -1,0 +1,625 @@
+:root {
+    --perplexity-primary: #6366f1;
+    --perplexity-success: #10b981;
+    --perplexity-error: #ef4444;
+    --perplexity-warning: #f59e0b;
+    --perplexity-border: #e5e7eb;
+    --perplexity-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+/* Enhanced Header Styling with Wider Borders */
+.spell-check-actions-header {
+    background: var(--background-modifier-form-field);
+    border: 3px solid var(--perplexity-primary); /* Increased from 2px to 3px */
+    border-radius: 12px;
+    padding: 1.5em; /* Increased from 1em to 1.5em */
+    margin: 0 0 2em 0;
+    box-shadow: var(--perplexity-shadow);
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Enhanced Button Styling */
+.enhanced-rewrite-btn, .apply-all-btn {
+    background: linear-gradient(135deg, var(--perplexity-primary), #4f46e5);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px; /* Increased padding */
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--perplexity-shadow);
+    position: relative;
+    overflow: hidden;
+}
+
+.enhanced-rewrite-btn:hover, .apply-all-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgb(99 102 241 / 0.4);
+    background: linear-gradient(135deg, #4f46e5, #4338ca);
+}
+
+/* Loading States for Buttons */
+.btn-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: btn-spinner 0.8s linear infinite;
+}
+
+@keyframes btn-spinner {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Progress Indicators */
+.progress-indicator {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-primary);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.progress-text {
+    text-align: center;
+    margin-bottom: 12px;
+    font-weight: 500;
+    color: var(--text-normal);
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--perplexity-primary), #4f46e5);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+    animation: progress-shimmer 1.5s infinite;
+}
+
+@keyframes progress-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Status Messages */
+.status-container {
+    margin: 16px 0;
+}
+
+.status-message {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 8px 0;
+    font-weight: 500;
+    border: 2px solid transparent;
+    box-shadow: var(--perplexity-shadow);
+}
+
+.status-success {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--perplexity-success);
+    border-color: var(--perplexity-success);
+}
+
+.status-error {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--perplexity-error);
+    border-color: var(--perplexity-error);
+}
+
+.status-warning {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--perplexity-warning);
+    border-color: var(--perplexity-warning);
+}
+
+.status-loading {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--perplexity-primary);
+    border-color: var(--perplexity-primary);
+}
+
+/* Error States with Retry */
+.error-state {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-error);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+    text-align: center;
+}
+
+.retry-btn {
+    background: var(--perplexity-error);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.retry-btn:hover {
+    background: #dc2626;
+    transform: translateY(-1px);
+}
+
+/* Enhanced Spell Check Items */
+.spell-check-item.enhanced, .formatting-issue-item.enhanced {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+    transition: all 0.3s ease;
+    box-shadow: var(--perplexity-shadow);
+}
+
+.spell-check-item.enhanced:hover, .formatting-issue-item.enhanced:hover {
+    border-color: var(--perplexity-primary);
+    box-shadow: 0 8px 25px -5px rgba(99, 102, 241, 0.15);
+    transform: translateY(-2px);
+}
+
+.spell-check-item.applied, .formatting-issue-item.applied {
+    border-color: var(--perplexity-success);
+    background: rgba(16, 185, 129, 0.05);
+}
+
+/* Headers and Badges */
+.correction-header, .issue-header {
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.confidence-badge, .fixable-badge {
+    background: var(--perplexity-primary);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.fixable-badge {
+    background: var(--perplexity-success);
+}
+
+/* Action Buttons */
+.apply-correction-btn, .fix-issue-btn {
+    background: var(--perplexity-success);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.apply-correction-btn:hover, .fix-issue-btn:hover {
+    background: #059669;
+    transform: translateY(-1px);
+}
+
+.apply-correction-btn:disabled, .fix-issue-btn:disabled {
+    background: #6b7280;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Text Corrections */
+.spell-check-original {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--perplexity-error);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.spell-check-suggested {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--perplexity-success);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.correction-arrow {
+    color: var(--perplexity-primary);
+    font-weight: bold;
+    margin: 0 8px;
+}
+
+/* Before/After Display */
+.before-after {
+    background: var(--background-modifier-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+    font-family: var(--font-monospace);
+}
+
+.before-text {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--perplexity-error);
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.after-text {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--perplexity-success);
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+/* Perfect Results */
+.perfect-result, .perfect-vault-result {
+    text-align: center;
+    padding: 40px 20px;
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-success);
+    border-radius: 12px;
+    margin: 20px 0;
+}
+
+.enhance-anyway {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Smart Links Styling */
+.smart-link-suggestion {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+    transition: all 0.3s ease;
+}
+
+.smart-link-suggestion:hover {
+    border-color: var(--perplexity-primary);
+    box-shadow: var(--perplexity-shadow);
+}
+
+.suggestion-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.relevance-score {
+    background: var(--perplexity-primary);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.connection-type-badge {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.theme-tag {
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--perplexity-primary);
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin: 0 4px 4px 0;
+    display: inline-block;
+}
+
+/* Bulk Actions */
+.bulk-actions {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-primary);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    text-align: center;
+}
+
+.enhance-all-btn, .enhance-file-btn {
+    background: linear-gradient(135deg, var(--perplexity-success), #059669);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--perplexity-shadow);
+}
+
+.enhance-all-btn:hover, .enhance-file-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -5px rgba(16, 185, 129, 0.4);
+}
+
+/* File Sections */
+.file-spell-check-section {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+}
+
+.file-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.file-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Small Correction Items */
+.spell-check-item-small {
+    background: var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+.confidence-small {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* View All Button */
+.view-all-btn {
+    background: var(--perplexity-primary);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    margin-top: 12px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.view-all-btn:hover {
+    background: #4f46e5;
+    transform: translateY(-1px);
+}
+
+/* Enhanced Result Actions */
+.enhanced-result-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.open-enhanced-btn, .compare-files-btn {
+    background: var(--perplexity-primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.open-enhanced-btn:hover, .compare-files-btn:hover {
+    background: #4f46e5;
+    transform: translateY(-1px);
+}
+
+/* RTL Support */
+.rtl-content {
+    direction: rtl;
+    text-align: right;
+}
+
+.rtl-content .correction-header,
+.rtl-content .issue-header,
+.rtl-content .suggestion-header {
+    flex-direction: row-reverse;
+}
+
+.rtl-content .file-section-header {
+    flex-direction: row-reverse;
+}
+
+/* Analysis Results */
+.analysis-overview {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+}
+
+.file-types-breakdown, .themes-section, .insights-section {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0;
+}
+
+.file-type-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.file-count {
+    background: var(--perplexity-primary);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* Migration Notice */
+.perplexity-migration-notice {
+    animation: migration-fade-in 0.5s ease-in-out;
+}
+
+@keyframes migration-fade-in {
+    from { 
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to { 
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Support Section */
+.perplexity-support, .perplexity-support-section {
+    text-align: center;
+    padding: 20px;
+    margin-top: 30px;
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-primary);
+    border-radius: 12px;
+}
+
+/* Model Info */
+.model-info {
+    background: var(--background-modifier-form-field);
+    border: 2px solid var(--perplexity-border);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .spell-check-actions-header {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .suggestion-header, .correction-header, .issue-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .file-section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .enhanced-result-actions {
+        flex-direction: column;
+    }
+}
+
+/* Dark Mode Enhancements */
+body.theme-dark {
+    --perplexity-border: #374151;
+    --perplexity-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+}
+
+/* Animation for Applied States */
+.spell-check-item.applied, .formatting-issue-item.applied {
+    animation: applied-success 0.5s ease-in-out;
+}
+
+@keyframes applied-success {
+    0% { 
+        transform: scale(1);
+        border-color: var(--perplexity-border);
+    }
+    50% { 
+        transform: scale(1.02);
+        border-color: var(--perplexity-success);
+    }
+    100% { 
+        transform: scale(1);
+        border-color: var(--perplexity-success);
+    }
+}
+
+/* Enhanced hover effects */
+.spell-check-item.enhanced:not(.applied):hover,
+.formatting-issue-item.enhanced:not(.applied):hover {
+    animation: item-hover 0.3s ease-in-out;
+}
+
+@keyframes item-hover {
+    0% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+    100% { transform: translateY(-2px); }
+}
