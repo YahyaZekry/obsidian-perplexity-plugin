@@ -359,4 +359,10 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 **Made with ❤️ for the global Obsidian community • The Bear Code**
 
+<div align="center">
+  <a href="https://buymeacoffee.com/YahyaZekry" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="50" width="210" />
+  </a>
+</div>
+
 **[☕ Support the Developer](https://buymeacoffee.com/YahyaZekry)** • **[🐛 Report Issues](https://github.com/yahyaZekry/obsidian-perplexity-plugin/issues)** • **[💡 Request Features](https://github.com/yahyaZekry/obsidian-perplexity-plugin/discussions)**
