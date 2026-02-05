@@ -38,7 +38,7 @@ export interface SpellCheckContext {
 export interface PerplexityService {
     checkSpellingAndFormat(content: string, language: string): Promise<SpellCheckResult>;
     applyCorrectionsWithChunks(content: string, language: string): Promise<string>;
-    createEnhancedRewrite(content: string): Promise<string>;
+    createEnhancedRewrite(content: string, language: string): Promise<string>;
 }
 
 export interface PerplexityPluginSettings {

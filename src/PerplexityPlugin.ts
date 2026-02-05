@@ -2,6 +2,7 @@ import { Plugin, PluginSettingTab, Setting, Modal, Notice, TFile, MarkdownView, 
 import { PerplexitySettingTab } from './settings/SettingsTab';
 import { CacheManager } from './services/CacheManager';
 import { VaultAnalyzer } from './services/VaultAnalyzer';
+import { SpellCheckStrategyFactory } from './services/SpellCheckStrategy';
 
 interface SpellCheckResult {
     corrections: Array<{
@@ -22,6 +23,7 @@ interface SpellCheckResult {
 }
 
 interface SpellCheckContext {
+    settings?: PerplexityPluginSettings;
     onProgress?: (progress: number, message: string) => void;
     onSectionComplete?: (section: number, total: number, result: SpellCheckResult) => void;
     onModeSwitchSuggestion?: (suggestedMode: string, reason: string) => void;
@@ -123,18 +125,44 @@ export default class PerplexityPlugin extends Plugin {
                         messages: [
                             {
                                 role: 'system',
-                                content: `Spell checker for ${language}. Return ONLY JSON:
+                                content: `Act as a precise spell checker and grammar validator for ${language}. Analyze the provided text and return ONLY a JSON object with zero corrections if no errors exist.
+
+**RESPONSE FORMAT (STRICT JSON ONLY):**
 {
-  "corrections": [{"original": "word", "suggested": "fix", "line": 1, "confidence": 0.9, "context": "sentence containing the error"}],
-  "formattingIssues": [{"issue": "description", "line": 1, "suggestion": "fix", "fixable": true}]
+  "corrections": [
+    {
+      "original": "incorect",
+      "suggested": "incorrect",
+      "line": 1,
+      "confidence": 0.95,
+      "context": "This is an incorect sentence."
+    }
+  ],
+  "formattingIssues": [
+    {
+      "issue": "Missing comma after introductory clause",
+      "line": 2,
+      "suggestion": "Add comma after 'However'",
+      "fixable": true,
+      "originalText": "However I disagree",
+      "suggestedText": "However, I disagree"
+    }
+  ]
 }
 
-CRITICAL RULES:
-- For Arabic (ar): PRESERVE all diacritics (تشكيل/tashkeel marks) - do NOT remove them
-- For Arabic: Respect original grammatical rules and vowel marks
-- For all languages: Only fix actual spelling/grammar errors
-- Return context field showing the sentence containing each error
-- Include line numbers for each correction`
+**FIELD DEFINITIONS:**
+- corrections: Spelling errors, incorrect word usage, grammatical mistakes
+- formattingIssues: Punctuation, spacing, capitalization, structural problems
+- confidence: 0.0-1.0 score indicating certainty
+- context: FULL sentence containing the error (not truncated)
+
+**CRITICAL RULES:**
+- ${language === 'ar' ? 'ARABIC-SPECIFIC: PRESERVE all diacritics (تشكيل/tashkeel marks) exactly as they appear – do NOT add, remove, or modify them' : 'Preserve original diacritics and special characters'}
+- Only flag actual errors; do NOT "improve" stylistic choices or rephrase for clarity
+- Do NOT suggest changes to proper nouns, technical terms, or code unless clearly misspelled
+- Line numbers are 1-indexed
+- If no errors: return {"corrections": [], "formattingIssues": []}
+- Never explain, apologize, or add markdown code blocks around the JSON`
                             },
                             {
                                 role: 'user',
@@ -201,7 +229,7 @@ CRITICAL RULES:
                 return await this.perplexityService.applySectionCorrections(content, language);
             },
 
-            createEnhancedRewrite: async (content: string): Promise<string> => {
+            createEnhancedRewrite: async (content: string, language: string): Promise<string> => {
                 if (content.length > 15000) {
                     const sections = content.split(/\n(?=##? )/);
                     const enhanced: string[] = [];
@@ -209,7 +237,7 @@ CRITICAL RULES:
                     for (const section of sections) {
                         if (section.trim()) {
                             try {
-                                const result = await this.perplexityService.enhanceSection(section);
+                                const result = await this.perplexityService.enhanceSection(section, language);
                                 enhanced.push(result);
                                 await new Promise(resolve => setTimeout(resolve, 1000));
                             } catch {
@@ -221,24 +249,54 @@ CRITICAL RULES:
                     return enhanced.join('\n\n');
                 }
 
-                return await this.perplexityService.enhanceSection(content);
+                return await this.perplexityService.enhanceSection(content, language);
             },
 
             applySectionCorrections: async (content: string, language: string): Promise<string> => {
                 const messages = [
                     {
                         role: 'system',
-                        content: `You are a ${language} spell checker and formatter.
+                        content: `You are a precise text correction engine for ${language}. Apply spelling and grammar fixes while preserving ALL Obsidian markdown syntax and document structure.
 
-CRITICAL: 
-- Fix ONLY spelling mistakes and grammar errors
-- Fix ONLY markdown formatting issues  
-- DO NOT rewrite, rephrase, or change content
-- DO NOT add new information or explanations
-- PRESERVE exact same meaning, style, and structure
-- Return corrected text directly (NO JSON, NO code blocks)
+**YOUR TASK:**
+Apply corrections to spelling errors and grammar mistakes ONLY. Return the corrected text in plain text format (NO JSON, NO markdown code blocks, NO explanations).
 
-Just return same content with corrections applied.`
+**ABSOLUTE PROTECTIONS (NEVER MODIFY THESE):**
+- Wiki-links: [[Page Name]] or [[Page Name|Display Text]]
+- Embeds: ![[Image.png]] or ![[Note#Heading]]
+- Frontmatter: --- key: value --- (preserve exact formatting)
+- Code blocks: \`\`\`language ... \`\`\` (preserve content inside)
+- Inline code: \`code snippets\`
+- Math blocks: $$...$$ or $...$
+- Callouts: > [!NOTE], > [!WARNING], etc.
+- HTML tags: <br>, <u>, etc.
+- Tables: | column | column | (preserve pipe structure)
+- Block IDs: ^block-id
+- Footnotes: [^1], [^1]: text
+- URLs: [text](https://...) or bare URLs
+
+**CORRECTION SCOPE:**
+- Fix spelling errors (e.g., "recieve" → "receive")
+- Fix grammar mistakes (e.g., "they is" → "they are")
+- Fix punctuation spacing (e.g., "word , word" → "word, word")
+- Fix capitalization at sentence start ONLY if clearly wrong
+
+**FORBIDDEN ACTIONS:**
+- Do NOT rephrase sentences for "better flow"
+- Do NOT change active/passive voice
+- Do NOT replace words with synonyms
+- Do NOT add or remove line breaks
+- Do NOT "improve" bullet points or numbered lists
+- Do NOT change heading levels (# ## ###)
+- Do NOT alter the structure of tables
+- Do NOT remove or add diacritics/tashkeel in Arabic text
+
+**OUTPUT RULES:**
+- Return ONLY the corrected text
+- NO markdown code blocks (\`\`\`) around the output
+- NO explanations, comments, or "Here is the corrected text:"
+- NO "---" separators before or after
+- Preserve exact line breaks and spacing from input`
                     },
                     {
                         role: 'user', 
@@ -277,15 +335,15 @@ ${content}`
                 }
             },
 
-            enhanceSection: async (content: string): Promise<string> => {
+            enhanceSection: async (content: string, language: string): Promise<string> => {
                 const messages = [
                     {
                         role: 'system',
-                        content: 'Enhance this markdown content. Return ONLY enhanced markdown content directly (no JSON, no code blocks).'
+                        content: "You are an expert Obsidian markdown editor and content strategist for " + language + ". Enhance the provided markdown file to improve clarity, structure, and Obsidian-native functionality while preserving the core meaning and intent.\n\n**ENHANCEMENT SCOPE:**\n\n**Content Improvements:**\n- Strengthen weak or vague phrasing with precise language\n- Fix logical flow between sections and paragraphs\n- Remove redundancies and filler words\n- Convert passive voice to active where it improves clarity\n- Break up overly long sentences and dense paragraphs\n- Add transitional phrases between disconnected ideas\n\n**Obsidian Structure Optimization:**\n- Improve heading hierarchy (H1→H2→H3) for logical nesting\n- Convert plain lists to proper Obsidian callouts where semantically appropriate:\n  - Use > [!NOTE] for important context\n  - Use > [!TIP] for actionable advice\n  - Use > [!WARNING] for critical caveats\n  - Use > [!EXAMPLE] for illustrative cases\n- Enhance wiki-links: [[Page]] → [[Page|Natural Link Text]] when context helps\n- Suggest relevant but currently unlinked concepts as [[Potential Links]]\n- Convert inline URLs to markdown links: [descriptive text](URL)\n- Format frontmatter cleanly (YAML style) with consistent indentation\n\n**Formatting Polish:**\n- Standardize bullet styles (- vs *) within documents\n- Ensure consistent spacing before/after headings and lists\n- Fix table alignment and column widths\n- Apply proper code block language identifiers (```python, ```javascript)\n- Clean up excessive blank lines (max 1 between paragraphs)\n\n**NON-NEGOTIABLE PRESERVATION:**\n- Do NOT change factual claims or data\n- Do NOT alter code logic inside code blocks\n- Do NOT remove existing [[wiki-links]] (improve their display text only)\n- Do NOT change the original author's voice/tone dramatically\n- Do NOT add external information not implied by the original text\n- For Arabic: Maintain original diacritics if present; don't add/remove tashkil\n\n**OUTPUT REQUIREMENTS:**\n- Return ONLY the enhanced markdown content\n- NO markdown code blocks around the output (```md or ```)\n- NO explanatory comments or \"Enhanced version:\" preamble\n- NO trailing notes about what was changed\n- Preserve document's original line ending style (LF/CRLF)"
                     },
                     {
                         role: 'user',
-                        content: `Enhance this content:\n\n${content}`
+                        content: "Enhance this content:\n\n" + content
                     }
                 ];
 
@@ -402,7 +460,7 @@ ${content}`
         }
     }
 
-    private simpleHash(str: string): string {
+    simpleHash(str: string): string {
         let hash = 0;
         for (let i = 0; i < str.length; i++) {
             const char = str.charCodeAt(i);
@@ -789,12 +847,22 @@ class SpellCheckEnhancementModal extends Modal {
         try {
             const content = await this.app.vault.read(activeFile);
             const context: SpellCheckContext = {
+                settings: this.plugin.settings,
                 onProgress: (progress: number, message: string) => {
                     notice.setMessage(`⏳ ${message} (${progress}%)`);
+                },
+                onModeSwitchSuggestion: (mode: string, reason: string) => {
+                    new Notice(`💡 Suggestion: Switch to ${mode} mode - ${reason}`);
                 }
             };
 
-            const result = await this.plugin.perplexityService.checkSpellingAndFormat(content, this.plugin.settings.spellCheckLanguage);
+            const strategy = SpellCheckStrategyFactory.createStrategy(
+                this.plugin.settings.spellCheckMode,
+                this.plugin.perplexityService,
+                this.plugin.settings
+            );
+
+            const result = await strategy.check(content, this.plugin.settings.spellCheckLanguage, context);
 
             notice.hide();
             new Notice(`✅ Found ${result.corrections.length} corrections and ${result.formattingIssues.length} formatting issues`);
@@ -847,7 +915,7 @@ class SpellCheckEnhancementModal extends Modal {
 
         try {
             const content = await this.app.vault.read(activeFile);
-            const enhanced = await this.plugin.perplexityService.createEnhancedRewrite(content);
+            const enhanced = await this.plugin.perplexityService.createEnhancedRewrite(content, this.plugin.settings.spellCheckLanguage);
 
             const enhancedName = `${activeFile.basename}-enhanced.md`;
             const enhancedPath = activeFile.path.replace(`${activeFile.basename}.md`, enhancedName);
@@ -888,8 +956,17 @@ class SpellCheckResultsModal extends Modal {
                 const div = contentEl.createDiv({ cls: 'spell-check-item' });
 
                 div.createEl('h4', { text: `Correction ${i + 1}` });
-                div.createEl('p', { text: `"${correction.original}" → "${correction.suggested}"` });
-                div.createEl('p', { text: `Line ${correction.line} (${Math.round(correction.confidence * 100)}% confidence)` });
+                const correctionText = div.createEl('p');
+                correctionText.textContent = `"${correction.original}" → "${correction.suggested}"`;
+                if (isRTL) {
+                    correctionText.addClass('rtl-text');
+                }
+                
+                const lineText = div.createEl('p');
+                lineText.textContent = `Line ${correction.line} (${Math.round(correction.confidence * 100)}% confidence)`;
+                if (isRTL) {
+                    lineText.addClass('rtl-text');
+                }
 
                 const context = correction.context || 'No context available';
                 const contextDiv = div.createDiv({ cls: 'error-context' });
@@ -934,8 +1011,18 @@ class SpellCheckResultsModal extends Modal {
                 const div = contentEl.createDiv({ cls: 'formatting-item' });
 
                 div.createEl('h4', { text: `Issue ${i + 1}` });
-                div.createEl('p', { text: `Line ${issue.line}: ${issue.issue}` });
-                div.createEl('p', { text: `Fix: ${issue.suggestion}` });
+                
+                const issueText = div.createEl('p');
+                issueText.textContent = `Line ${issue.line}: ${issue.issue}`;
+                if (isRTL) {
+                    issueText.addClass('rtl-text');
+                }
+                
+                const fixText = div.createEl('p');
+                fixText.textContent = `Fix: ${issue.suggestion}`;
+                if (isRTL) {
+                    fixText.addClass('rtl-text');
+                }
 
                 if (issue.originalText && issue.suggestedText) {
                     const contextDiv = div.createDiv({ cls: 'error-context' });

@@ -707,6 +707,11 @@ body.theme-dark {
     text-align: right;
 }
 
+.rtl-text {
+    direction: rtl;
+    text-align: right;
+}
+
 .rtl-content .error-context {
     border-left: none;
     border-right: 3px solid var(--perplexity-warning);

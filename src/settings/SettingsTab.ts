@@ -47,47 +47,58 @@ export class PerplexitySettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.spellCheckMode = value as SpellCheckMode;
                     await this.plugin.saveSettings();
+                    this.display(); // Refresh to show/hide relevant settings
                 }));
 
         containerEl.createEl('hr');
 
-        new Setting(containerEl)
-            .setName('Full Mode Chunk Size')
-            .setDesc('Characters per chunk when checking long documents')
-            .addSlider(slider => slider
-                .setLimits(2000, 10000, 1000)
-                .setValue(this.plugin.settings.fullModeChunkSize)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.fullModeChunkSize = value;
-                    await this.plugin.saveSettings();
-                }));
+        // Full Mode Settings
+        if (this.plugin.settings.spellCheckMode === 'full') {
+            containerEl.createEl('h3', { text: 'Full Mode Settings' });
+            new Setting(containerEl)
+                .setName('Full Mode Chunk Size')
+                .setDesc('Characters per API call when checking long documents (1000-10000). Larger chunks = fewer API calls but higher cost. Default: 4000 characters (about 600 words).')
+                .addSlider(slider => slider
+                    .setLimits(2000, 10000, 1000)
+                    .setValue(this.plugin.settings.fullModeChunkSize)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.fullModeChunkSize = value;
+                        await this.plugin.saveSettings();
+                    }));
+        }
 
-        new Setting(containerEl)
-            .setName('Auto Mode Error Threshold')
-            .setDesc('Errors per 1000 characters that trigger full check suggestion')
-            .addSlider(slider => slider
-                .setLimits(1, 10, 0.5)
-                .setValue(this.plugin.settings.autoModeThreshold)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.autoModeThreshold = value;
-                    await this.plugin.saveSettings();
-                }));
+        // Auto Mode Settings
+        if (this.plugin.settings.spellCheckMode === 'auto') {
+            containerEl.createEl('h3', { text: 'Auto Mode Settings' });
+            new Setting(containerEl)
+                .setName('Auto Mode Error Threshold')
+                .setDesc('Number of errors per 1000 characters that trigger a full check suggestion (1-10). Lower = more aggressive. Default: 3 errors per 1000 characters.')
+                .addSlider(slider => slider
+                    .setLimits(1, 10, 0.5)
+                    .setValue(this.plugin.settings.autoModeThreshold)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.autoModeThreshold = value;
+                        await this.plugin.saveSettings();
+                    }));
+        }
 
-        containerEl.createEl('hr');
-
-        new Setting(containerEl)
-            .setName('Incremental Mode Section Size')
-            .setDesc('Characters per section in incremental mode')
-            .addSlider(slider => slider
-                .setLimits(2000, 8000, 1000)
-                .setValue(this.plugin.settings.incrementalModeSectionSize)
-                .setDynamicTooltip()
-                .onChange(async (value) => {
-                    this.plugin.settings.incrementalModeSectionSize = value;
-                    await this.plugin.saveSettings();
-                }));
+        // Incremental Mode Settings
+        if (this.plugin.settings.spellCheckMode === 'incremental') {
+            containerEl.createEl('h3', { text: 'Incremental Mode Settings' });
+            new Setting(containerEl)
+                .setName('Incremental Mode Section Size')
+                .setDesc('Characters per section when checking incrementally (2000-8000). Smaller sections = lower cost per check. Default: 5000 characters (about 750 words).')
+                .addSlider(slider => slider
+                    .setLimits(2000, 8000, 1000)
+                    .setValue(this.plugin.settings.incrementalModeSectionSize)
+                    .setDynamicTooltip()
+                    .onChange(async (value) => {
+                        this.plugin.settings.incrementalModeSectionSize = value;
+                        await this.plugin.saveSettings();
+                    }));
+        }
 
         containerEl.createEl('hr');
 
