@@ -1074,12 +1074,15 @@ class SpellCheckResultsModal extends Modal {
     private async applySingle(original: string, suggested: string, div: HTMLElement) {
         try {
             const content = await this.app.vault.read(this.file);
-            const newContent = content.replace(original, suggested);
+            // Replace all occurrences
+            const regex = new RegExp(original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+            const newContent = content.replace(regex, suggested);
             await this.app.vault.modify(this.file, newContent);
 
             div.style.opacity = '0.5';
             new Notice(`✅ Applied: ${original.substring(0, 30)}...`);
         } catch (error) {
+            console.error('Apply single correction error:', error);
             new Notice(`❌ Failed: ${error.message}`);
         }
     }
@@ -1089,13 +1092,15 @@ class SpellCheckResultsModal extends Modal {
         try {
             let content = await this.app.vault.read(this.file);
             this.result.corrections.forEach((correction: any) => {
-                content = content.replace(correction.original, correction.suggested);
+                const regex = new RegExp(correction.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                content = content.replace(regex, correction.suggested);
             });
             await this.app.vault.modify(this.file, content);
             notice.hide();
             new Notice(`✅ Applied ${this.result.corrections.length} corrections!`);
             this.close();
         } catch (error) {
+            console.error('Apply all corrections error:', error);
             notice.hide();
             new Notice(`❌ Failed: ${error.message}`);
         }
@@ -1108,7 +1113,8 @@ class SpellCheckResultsModal extends Modal {
             let content = await this.app.vault.read(this.file);
             fixableIssues.forEach((issue: any) => {
                 if (issue.originalText && issue.suggestedText) {
-                    content = content.replace(issue.originalText, issue.suggestedText);
+                    const regex = new RegExp(issue.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                    content = content.replace(regex, issue.suggestedText);
                 }
             });
             await this.app.vault.modify(this.file, content);
@@ -1116,6 +1122,7 @@ class SpellCheckResultsModal extends Modal {
             new Notice(`✅ Applied ${fixableIssues.length} formatting fixes!`);
             this.close();
         } catch (error) {
+            console.error('Apply all fixes error:', error);
             notice.hide();
             new Notice(`❌ Failed: ${error.message}`);
         }
