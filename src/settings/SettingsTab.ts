@@ -103,6 +103,20 @@ export class PerplexitySettingTab extends PluginSettingTab {
         containerEl.createEl('hr');
 
         new Setting(containerEl)
+            .setName('Spell Check Prompt')
+            .setDesc('Choose between standard prompt (faster, lower tokens) or superprompt (more accurate, higher tokens)')
+            .addDropdown(dropdown => dropdown
+                .addOption('standard', 'Standard (Fast)')
+                .addOption('superprompt', 'Superprompt (Accurate)')
+                .setValue(this.plugin.settings.spellCheckPrompt)
+                .onChange(async (value) => {
+                    this.plugin.settings.spellCheckPrompt = value as 'standard' | 'superprompt';
+                    await this.plugin.saveSettings();
+                }));
+
+        containerEl.createEl('hr');
+
+        new Setting(containerEl)
             .setName('Smart Linking Mode')
             .setDesc('Analysis mode for generating smart links')
             .addDropdown(dropdown => dropdown

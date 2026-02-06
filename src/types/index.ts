@@ -59,6 +59,7 @@ export interface PerplexityPluginSettings {
     linkAnalysisModel: string;
     spellCheckScope: 'current' | 'vault';
     enhancedRewriteModel: string;
+    spellCheckPrompt: 'standard' | 'superprompt';
 
     spellCheckMode: SpellCheckMode;
     fullModeChunkSize: number;

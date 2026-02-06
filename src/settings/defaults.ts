@@ -20,6 +20,7 @@ export const DEFAULT_SETTINGS: PerplexityPluginSettings = {
     linkAnalysisModel: 'sonar-pro',
     spellCheckScope: 'current',
     enhancedRewriteModel: 'sonar-reasoning-pro',
+    spellCheckPrompt: 'standard',
     spellCheckMode: 'incremental',
     fullModeChunkSize: 4000,
     fullModeShowProgress: true,
