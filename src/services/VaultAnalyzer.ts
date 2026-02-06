@@ -1,24 +1,29 @@
 import { App, TFile } from 'obsidian';
-import { VaultAnalysisResult, SmartLinkSuggestion } from '../types';
+import { VaultAnalysisResult, SmartLinkSuggestion, PerplexityPluginSettings } from '../types';
 import { CacheManager } from './CacheManager';
+import { FileFilter } from './FileFilter';
 
 export class VaultAnalyzer {
+    private fileFilter: FileFilter;
+
     constructor(
         private app: App,
-        private cacheManager: CacheManager
-    ) {}
+        private cacheManager: CacheManager,
+        private settings: PerplexityPluginSettings
+    ) {
+        this.fileFilter = new FileFilter(settings);
+    }
 
     async analyzeVault(): Promise<VaultAnalysisResult> {
         const allFiles = this.app.vault.getFiles();
-        const markdownFiles = allFiles.filter(f => f.extension === 'md');
+        
+        // Filter files using FileFilter
+        const { included: includedFiles, breakdown } = this.fileFilter.filterFiles(allFiles);
+        
+        // Extract markdown files from included files
+        const markdownFiles = includedFiles.filter(f => f.extension === 'md');
         
         const themes = new Set<string>();
-        const fileTypes: Record<string, number> = {};
-
-        allFiles.forEach(file => {
-            const ext = file.extension || 'no-ext';
-            fileTypes[ext] = (fileTypes[ext] || 0) + 1;
-        });
 
         const chunkSize = 100;
         const chunks = this.chunkFiles(markdownFiles, chunkSize);
@@ -53,10 +58,10 @@ export class VaultAnalyzer {
         }
 
         return {
-            totalFiles: allFiles.length,
+            totalFiles: includedFiles.length,
             markdownFiles: markdownFiles.length,
             themes: Array.from(themes),
-            fileTypes
+            fileTypes: breakdown
         };
     }
 
@@ -151,7 +156,10 @@ Return ONLY the JSON array, no explanations.`
             return [];
         }
 
-        const files = this.app.vault.getFiles()
+        // Get all files and filter using FileFilter
+        const { included: includedFiles } = this.fileFilter.filterFiles(this.app.vault.getFiles());
+        
+        const files = includedFiles
             .filter(f => f.extension === 'md')
             .filter(f => f.path !== activeFile.path);
 

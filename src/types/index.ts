@@ -42,6 +42,7 @@ export interface PerplexityService {
 }
 
 export interface PerplexityPluginSettings {
+    version: number;
     apiKey: string;
     spellCheckLanguage: string;
     similarityThreshold: number;

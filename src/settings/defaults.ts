@@ -3,6 +3,7 @@ import { PerplexityPluginSettings } from '../types';
 export type { PerplexityPluginSettings } from '../types';
 
 export const DEFAULT_SETTINGS: PerplexityPluginSettings = {
+    version: 2,
     apiKey: '',
     spellCheckLanguage: 'en',
     similarityThreshold: 0.7,

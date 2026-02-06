@@ -6,6 +6,7 @@ import { PerplexityService } from './services/PerplexityService';
 import { PerplexityMainModal } from './ui/modals/MainModal';
 import { VaultAnalysisModal } from './ui/modals/VaultSpellCheckModal';
 import { SmartLinksModal } from './ui/modals/ModelRecommendationsModal';
+import { migrate } from './settings/migration';
 
 interface SpellCheckResult {
     corrections: Array<{
@@ -35,6 +36,7 @@ interface SpellCheckContext {
 type SpellCheckMode = 'auto' | 'full' | 'incremental';
 
 interface PerplexityPluginSettings {
+    version: number;
     apiKey: string;
     spellCheckLanguage: string;
     similarityThreshold: number;
@@ -66,6 +68,7 @@ interface PerplexityPluginSettings {
 }
 
 const DEFAULT_SETTINGS: PerplexityPluginSettings = {
+    version: 2,
     apiKey: '',
     spellCheckLanguage: 'en',
     similarityThreshold: 0.7,
@@ -109,7 +112,7 @@ export class PerplexityPlugin extends Plugin {
         this.addSettingTab(new PerplexitySettingTab(this.app, this));
         
         this.cacheManager = new CacheManager(this.app);
-        this.vaultAnalyzer = new VaultAnalyzer(this.app, this.cacheManager);
+        this.vaultAnalyzer = new VaultAnalyzer(this.app, this.cacheManager, this.settings);
         this.perplexityService = new PerplexityService(this.cacheManager, this.settings);
 
         this.addRibbonIcon('brain', 'Perplexity Assistant', () => {
@@ -138,7 +141,9 @@ export class PerplexityPlugin extends Plugin {
     }
 
     async loadSettings() {
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+        const loadedData = await this.loadData();
+        this.settings = migrate(Object.assign({}, DEFAULT_SETTINGS, loadedData));
+        await this.saveSettings(); // Save migrated settings
     }
 
     async saveSettings() {
